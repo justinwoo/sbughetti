@@ -5,6 +5,8 @@ import "fmt"
 import "os"
 import "os/exec"
 import "strings"
+import "runtime"
+import "sync"
 
 const dir string = ".spacchetti"
 const config string = dir + "/spacchetti.json"
@@ -159,15 +161,13 @@ func getSources() []string {
 }
 
 func main() {
-	var init bool
 	var install bool
 	var sources bool
 	var build bool
 
-	flag.BoolVar(&init, "init", false, "initialize a Spacchetti project in this repo.")
 	flag.BoolVar(&install, "install", false, "install the project dependencies.")
 	flag.BoolVar(&sources, "sources", false, "get the source globs for the project.")
-	flag.BoolVar(&build, "build", false, "buildFn the project.")
+	flag.BoolVar(&build, "build", false, "build the project.")
 	flag.Parse()
 
 	// make sure we have dir to work with
@@ -179,9 +179,22 @@ func main() {
 
 		fmt.Println("Installing", len(deps), "dependencies.")
 
+		runtime.GOMAXPROCS(10)
+
+		var wg sync.WaitGroup
+		wg.Add(len(deps))
+
 		for _, dep := range deps {
-			installDep(dep)
+			go func(dep string) {
+				defer wg.Done()
+
+				installDep(dep)
+			}(dep)
 		}
+
+		wg.Wait()
+
+		fmt.Println("Installed dependencies.")
 	}
 	if sources {
 		sources := getSources()
@@ -209,5 +222,10 @@ func main() {
 		}
 
 		fmt.Println("Build succeeded.")
+	}
+
+	if !install && !sources && !build {
+		fmt.Println("You must specify at least one task to run. See -help.")
+		os.Exit(1)
 	}
 }
